@@ -1,11 +1,11 @@
 [package]
-name = "bdk_bip322"
+name = "bdk_message_signer"
 version = "0.1.0"
 homepage = "https://bitcoindevkit.org"
-repository = "https://github.com/bitcoindevkit/bdk-bip322"
-documentation = "https://docs.rs/bdk_bip322"
+repository = "https://github.com/bitcoindevkit/bdk-message-signer"
+documentation = "https://docs.rs/bdk_message_signer"
 description = "BIP-322 Generic Signed Message Format implementation for BDK"
-keywords = ["bitcoin", "wallet", "bip322", "signing"]
+keywords = ["bitcoin", "wallet", "bip322", "signing", "message"]
 license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.85.0"

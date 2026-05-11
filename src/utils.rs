@@ -1,5 +1,4 @@
-//! The utility methods for BIP-322 for message signing
-//! according to the BIP-322 standard.
+//! The utility methods for message signing according to the BIP-322 standard.
 use alloc::{string::ToString, vec::Vec};
 
 use bdk_wallet::{
@@ -22,14 +21,14 @@ use bitcoin::{
 
 use crate::{Error, SignatureFormat};
 
-/// The tag used for BIP-322 message hashing according to BIP-340 tagged hashes
-pub const BIP322_TAG: &str = "BIP0322-signed-message";
+/// The tag used for message hashing.
+pub const MESSAGE_SIGNER_TAG: &str = "BIP0322-signed-message";
 
 /// Creates a tagged hash of a message according to the BIP322 specification.
 pub fn tagged_message_hash(message: &[u8]) -> sha256::Hash {
     let mut engine = sha256::Hash::engine();
 
-    let tag_hash = sha256::Hash::hash(BIP322_TAG.as_bytes());
+    let tag_hash = sha256::Hash::hash(MESSAGE_SIGNER_TAG.as_bytes());
     engine.input(&tag_hash[..]);
     engine.input(&tag_hash[..]);
     engine.input(message);
@@ -37,7 +36,7 @@ pub fn tagged_message_hash(message: &[u8]) -> sha256::Hash {
     sha256::Hash::from_engine(engine)
 }
 
-/// Creates the virtual "to_spend" transaction for BIP-322.
+/// Creates the virtual "to_spend" transaction.
 pub fn to_spend(script_pubkey: &ScriptBuf, message: &str) -> Transaction {
     let message_hash = tagged_message_hash(message.as_bytes());
     let script_sig = Builder::new()
@@ -64,7 +63,7 @@ pub fn to_spend(script_pubkey: &ScriptBuf, message: &str) -> Transaction {
     }
 }
 
-/// Creates the virtual "to_sign" transaction for BIP-322.
+/// Creates the virtual "to_sign" transaction.
 pub fn to_sign(
     to_spend: &Transaction,
     version: Version,
@@ -204,7 +203,7 @@ pub fn extract_pubkeys(witness_script: &ScriptBuf) -> Result<Vec<PublicKey>, Err
     Ok(pubkeys)
 }
 
-/// Detects the BIP-322 signature format from raw signature bytes.
+/// Detects the signature format from raw signature bytes.
 pub fn detect_signature_format(signature_bytes: &[u8]) -> Result<SignatureFormat, Error> {
     if signature_bytes.len() == 65 {
         let recovery_flag = signature_bytes[0];
@@ -239,7 +238,7 @@ pub fn detect_signature_format(signature_bytes: &[u8]) -> Result<SignatureFormat
     }
 
     Err(Error::InvalidSignature(
-        "Bytes match no BIP-322 format (not 65-byte legacy, not a full transaction, not a witness stack)"
+        "Bytes match no format (not 65-byte legacy, not a full transaction, not a witness stack)"
             .to_string(),
     ))
 }

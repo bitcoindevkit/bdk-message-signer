@@ -1,9 +1,10 @@
-//! The signature generation implementation for BIP-322 for message signing
+//! The signature generation implementation for message signing
 //! according to the BIP-322 standard.
 
 use crate::{
-    BIP322, Error, MessageProof, MessageVerificationResult, SignatureFormat, configure_p2sh_input,
-    derive_tx_params, to_sign, to_spend, validate_witness, verify_psbt_proof, verify_signed_proof,
+    Error, MessageProof, MessageSigner, MessageVerificationResult, SignatureFormat,
+    configure_p2sh_input, derive_tx_params, to_sign, to_spend, validate_witness, verify_psbt_proof,
+    verify_signed_proof,
 };
 use alloc::{string::ToString, vec::Vec};
 
@@ -18,7 +19,7 @@ use bitcoin::{
     transaction::Version,
 };
 
-impl BIP322 for Wallet {
+impl MessageSigner for Wallet {
     fn sign_message(
         &mut self,
         message: &str,

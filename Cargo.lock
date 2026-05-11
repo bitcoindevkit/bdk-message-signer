@@ -37,14 +37,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
-name = "bdk_bip322"
-version = "0.1.0"
-dependencies = [
- "bdk_wallet",
- "bitcoin",
-]
-
-[[package]]
 name = "bdk_chain"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -65,6 +57,14 @@ dependencies = [
  "bitcoin",
  "hashbrown",
  "serde",
+]
+
+[[package]]
+name = "bdk_message_signer"
+version = "0.1.0"
+dependencies = [
+ "bdk_wallet",
+ "bitcoin",
 ]
 
 [[package]]

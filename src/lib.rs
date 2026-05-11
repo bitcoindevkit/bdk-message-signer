@@ -33,7 +33,7 @@ use bitcoin::{
     base64::{Engine, engine::general_purpose},
 };
 
-/// Represents the different formats supported by the BIP322 message signing protocol.
+/// Represents the different formats supported by the message signing protocol.
 ///
 /// BIP322 defines multiple formats for signatures to accommodate different use cases
 /// and maintain backward compatibility with legacy signing methods.
@@ -41,15 +41,15 @@ use bitcoin::{
 pub enum SignatureFormat {
     /// Legacy Bitcoin Core message signing format (P2PKH only).
     Legacy,
-    /// A simplified version of the BIP322 format that includes only the witness stack.
+    /// A simplified version of the format that includes only the witness stack.
     Simple,
-    /// Full BIP322 format with complete transaction data.
+    /// Full format with complete transaction data.
     Full,
-    /// The Full BIP322 format with Proof-of-funds capabiility.
+    /// The Full format with Proof-of-funds capabiility.
     FullProofOfFunds,
 }
 
-/// Main trait providing BIP322 signing and verification functionality.
+/// Main trait providing signing and verification functionality.
 ///
 /// This trait is implemented for `bdk_wallet::Wallet` to provide seamless
 /// integration with BDK wallets.
@@ -58,9 +58,9 @@ pub enum SignatureFormat {
 ///
 /// ```no_run
 /// use bdk_wallet::{Wallet, KeychainKind};
-/// use bdk_bip322::{BIP322, SignatureFormat};
+/// use bdk_message_signer::{MessageSigner, SignatureFormat};
 ///
-/// # fn main() -> Result<(), bdk_bip322::error::Error> {
+/// # fn main() -> Result<(), bdk_message_signer::error::Error> {
 /// # let mut wallet: Wallet = unimplemented!();
 /// let address = wallet.peek_address(KeychainKind::External, 0).address;
 ///
@@ -83,8 +83,8 @@ pub enum SignatureFormat {
 /// # Ok(())
 /// # }
 /// ```
-pub trait BIP322 {
-    /// Sign a message for a specific address using BIP322.
+pub trait MessageSigner {
+    /// Sign a message for a specific address.
     ///
     /// # Arguments
     ///
@@ -104,7 +104,7 @@ pub trait BIP322 {
         utxos: Option<Vec<OutPoint>>,
     ) -> Result<MessageProof, Error>;
 
-    /// Verify a BIP322 message signature.
+    /// Verify message signature.
     ///
     /// # Arguments
     ///
@@ -124,7 +124,7 @@ pub trait BIP322 {
     ) -> Result<MessageVerificationResult, Error>;
 }
 
-/// Result of a BIP322 signature verification.
+/// Result of signature verification.
 pub struct MessageVerificationResult {
     /// Whether the signature is valid for the given message and address
     pub valid: bool,
@@ -135,7 +135,7 @@ pub struct MessageVerificationResult {
     pub proven_amount: Option<Amount>,
 }
 
-/// Result of a BIP322 signing operation.
+/// Result of signing operation.
 ///
 /// Signing can result in either a complete signature (when the wallet has
 /// private keys) or a PSBT ready for external signing (e.g., hardware wallets).
@@ -150,7 +150,7 @@ pub enum MessageProof {
 }
 
 impl MessageProof {
-    /// Converts the BIP322 proof to a base64-encoded string.
+    /// Converts the proof to a base64-encoded string.
     pub fn to_base64(&self) -> String {
         match self {
             // Signed proofs are already in base64 format, just return the string

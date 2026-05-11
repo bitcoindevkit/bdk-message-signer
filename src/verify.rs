@@ -1,6 +1,6 @@
 //! BIP-322 signature verification implementation.
 //!
-//! This module handles verification of all BIP-322 signature formats including
+//! This module handles verification of all signature formats including
 //! legacy, simple, full, and proof-of-funds variants.
 
 use crate::{
@@ -87,7 +87,7 @@ pub fn verify_psbt_proof(
     })
 }
 
-/// Verifies a signed (finalized) BIP-322 proof.
+/// Verifies a signed (finalized) proof.
 pub fn verify_signed_proof(
     wallet: &Wallet,
     message: &str,
@@ -176,7 +176,7 @@ pub fn verify_signed_proof(
     }
 }
 
-/// Verifies a BIP-322 message signature for the given address using the specified format.
+/// Verifies a message signature for the given address using the specified format.
 fn verify_message(
     wallet: &Wallet,
     address: &Address,

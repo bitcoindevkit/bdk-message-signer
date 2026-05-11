@@ -1,6 +1,6 @@
-//! Error types for BIP‑322 operations.
+//! Error types for bdk_message_signer operations.
 //!
-//! All possible errors that can occur when signing or verifying a BIP‑322 message.
+//! All possible errors that can occur when signing or verifying a bdk_message_signer message.
 use alloc::{boxed::Box, string::String};
 use bdk_wallet::signer::SignerError;
 use bitcoin::{
@@ -11,7 +11,7 @@ use bitcoin::{
 };
 use core::fmt;
 
-/// Error types for BIP322 message signing and verification operations.
+/// Error types for message signing and verification operations.
 ///
 /// This enum encompasses all possible errors that can occur during the BIP322
 /// message signing or verification process.
