@@ -1,6 +1,6 @@
 [package]
 name = "bdk_message_signer"
-version = "0.1.0"
+version = "0.2.0"
 homepage = "https://bitcoindevkit.org"
 repository = "https://github.com/bitcoindevkit/bdk-message-signer"
 documentation = "https://docs.rs/bdk_message_signer"
