@@ -1,122 +1,87 @@
-//! Error types for bdk_message_signer operations.
-//!
-//! All possible errors that can occur when signing or verifying a bdk_message_signer message.
-use alloc::{boxed::Box, string::String};
-use bdk_wallet::signer::SignerError;
-use bitcoin::{
-    OutPoint, Txid,
-    consensus::encode::Error as ConsensusError,
-    io::Error as IoError,
-    psbt::{Error as PsbtError, ExtractTxError},
-};
+use bdk_wallet::{bitcoin::OutPoint, miniscript, signer::SignerError};
 use core::fmt;
 
-/// Error types for message signing and verification operations.
-///
-/// This enum encompasses all possible errors that can occur during the BIP322
-/// message signing or verification process.
+/// Errors from [`MessageSigner`](crate::MessageSigner) and [`encode_signature`](crate::encode_signature).
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
-    /// The format of the data is invalid for the given context
-    InvalidFormat(String),
-    /// The message does not meet requirements
-    InvalidMessage,
-    /// The provided public key is invalid
-    InvalidPublicKey(String),
-    /// Unable to compute the signature hash for signing
-    SighashError,
-    /// The digital signature is invalid
-    InvalidSignature(String),
-    /// The address is not a Segwit address
-    NotSegwitAddress,
-    /// The Segwit version is not supported for the given context
-    UnsupportedSegwitVersion(String),
-    /// The provided sighash type is invalid for this context
-    InvalidSighashType,
-    /// The transaction witness data is invalid
-    InvalidWitness(String),
-    /// Signer Error
-    SignerError(SignerError),
-    /// Bitcoin IoError
-    IoError(IoError),
-    /// ExtractTxError
-    ExtractTxError(Box<ExtractTxError>),
-    /// PsbtError
-    PsbtError(PsbtError),
-    /// ConsensusError
-    ConsensusError(ConsensusError),
-    /// Transaction not found in wallet
-    TransactionNotFound(Txid),
-    /// UTXO not found in wallet
-    UtxoNotFound(OutPoint),
-    /// Script type is not supported
-    UnsupportedScriptType(String),
+    /// The address does not belong to the wallet.
+    AddressNotInWallet,
+    /// The UTXO is not an unspent output of the wallet.
+    UtxoNotInWallet(OutPoint),
+    /// The simple format requires a native segwit address and no timelocks.
+    SimpleNotSupported,
+    /// The PSBT is not a BIP-322 signing request.
+    NotBip322Psbt,
+    /// A proof input's prevout in the PSBT does not match the wallet's UTXO.
+    ProofUtxoMismatch(OutPoint),
+    /// The format does not match the PSBT's number of inputs.
+    FormatMismatch,
+    /// A proof of funds needs at least one UTXO.
+    NoProofUtxos,
+    /// The PSBT has inputs without final scripts.
+    NotFinalized,
+    /// The wallet descriptor could not produce a script.
+    Descriptor(miniscript::Error),
+    /// The BIP-322 PSBT could not be built.
+    Bip322(bip322::Error),
+    /// The wallet failed to sign.
+    Signer(SignerError),
+    /// The produced signature failed verification.
+    InvalidSignature(bip322::Error),
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidFormat(e) => write!(f, "Invalid format: {}", e),
-            Self::InvalidMessage => write!(f, "Message hash is not secure"),
-            Self::InvalidPublicKey(e) => write!(f, "Invalid public key {}", e),
-            Self::SighashError => write!(f, "Unable to compute signature hash"),
-            Self::InvalidSignature(e) => write!(f, "Invalid Signature - {}", e),
-            Self::NotSegwitAddress => write!(f, "Not a Segwit address"),
-            Self::UnsupportedSegwitVersion(e) => write!(f, "Only Segwit {} is supported", e),
-            Self::InvalidSighashType => write!(f, "Sighash type is invalid"),
-            Self::InvalidWitness(e) => write!(f, "Invalid Witness - {}", e),
-            Self::SignerError(err) => write!(f, "Signer error: {}", err),
-            Self::IoError(err) => write!(f, "Bitcoin IO Error: {}", err),
-            Self::ExtractTxError(err) => write!(f, "Extract TX Error: {}", err),
-            Self::PsbtError(err) => write!(f, "Psbt Error: {}", err),
-            Self::ConsensusError(err) => write!(f, "Consensus Error: {}", err),
-            Self::TransactionNotFound(err) => write!(f, "Transaction not found: {}", err),
-            Self::UtxoNotFound(err) => write!(f, "UTXO not found: {}", err),
-            Self::UnsupportedScriptType(err) => write!(f, "Unsupported script type: {}", err),
+            Self::AddressNotInWallet => write!(f, "address does not belong to the wallet"),
+            Self::UtxoNotInWallet(outpoint) => write!(f, "{outpoint} is not a wallet UTXO"),
+            Self::SimpleNotSupported => {
+                write!(
+                    f,
+                    "simple format requires a native segwit address and no timelocks"
+                )
+            }
+            Self::NotBip322Psbt => write!(f, "PSBT is not a BIP-322 signing request"),
+            Self::FormatMismatch => write!(f, "format does not match the PSBT"),
+            Self::ProofUtxoMismatch(outpoint) => {
+                write!(f, "prevout of {outpoint} does not match the wallet")
+            }
+            Self::NoProofUtxos => write!(f, "proof of funds needs at least one UTXO"),
+            Self::NotFinalized => write!(f, "PSBT is not finalized"),
+            Self::Descriptor(error) => write!(f, "descriptor: {error}"),
+            Self::Bip322(error) => write!(f, "bip322: {error}"),
+            Self::Signer(error) => write!(f, "signer: {error}"),
+            Self::InvalidSignature(error) => write!(f, "signature failed verification: {error}"),
         }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Descriptor(error) => Some(error),
+            Self::Bip322(error) | Self::InvalidSignature(error) => Some(error),
+            Self::Signer(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<miniscript::Error> for Error {
+    fn from(error: miniscript::Error) -> Self {
+        Self::Descriptor(error)
+    }
+}
+
+impl From<bip322::Error> for Error {
+    fn from(error: bip322::Error) -> Self {
+        Self::Bip322(error)
     }
 }
 
 impl From<SignerError> for Error {
-    fn from(err: SignerError) -> Self {
-        Error::SignerError(err)
-    }
-}
-
-impl From<IoError> for Error {
-    fn from(err: IoError) -> Self {
-        Error::IoError(err)
-    }
-}
-
-impl From<ExtractTxError> for Error {
-    fn from(err: ExtractTxError) -> Self {
-        Error::ExtractTxError(Box::new(err))
-    }
-}
-
-impl From<PsbtError> for Error {
-    fn from(err: PsbtError) -> Self {
-        Error::PsbtError(err)
-    }
-}
-
-impl From<ConsensusError> for Error {
-    fn from(err: ConsensusError) -> Self {
-        Error::ConsensusError(err)
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::SignerError(e) => Some(e),
-            Self::IoError(e) => Some(e),
-            Self::ExtractTxError(e) => Some(e.as_ref()),
-            Self::PsbtError(e) => Some(e),
-            Self::ConsensusError(e) => Some(e),
-            _ => None,
-        }
+    fn from(error: SignerError) -> Self {
+        Self::Signer(error)
     }
 }

@@ -1,71 +1,93 @@
 # `bdk_message_signer`
 
-**Note:** This is an experimental crate exploring a descriptor-based implementation of BIP-322 within the Bitcoin Dev Kit (BDK) ecosystem.
+**Note:** This crate is experimental.
 
-A Rust library implementing the [BIP‑322: Generic Signed Message Format](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) for Bitcoin, built on top of the Bitcoin Dev Kit (BDK) ecosystem.
+[BIP-322](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) message
+signing for [`bdk_wallet`](https://docs.rs/bdk_wallet). It adds a `MessageSigner`
+method to `Wallet` and builds on the [`bip322`](https://github.com/rust-bitcoin/bip322)
+crate for the BIP-322 transactions, PSBT fields and verification.
 
-`bdk_message_signer` enables cryptographic proof of control over Bitcoin addresses and
-funds without moving coins or broadcasting transactions, while securely
-committing to arbitrary messages.
+You pass your own `SignersContainer`s, as with `Wallet::sign_with_signers`. No
+private keys are passed to this crate directly.
 
-## Overview
-BIP-322 defines a standardized, script-agnostic mechanism for signing and
-verifying messages with Bitcoin addresses. Unlike legacy `signmessage`,
-BIP-322 works across modern script types (SegWit, Taproot) and enables advanced use cases such as proof-of-funds.
+## SignatureFormat
 
-This library provides a **descriptor-based, wallet-native** implementation of
-BIP-322, designed for seamless integration with `bdk_wallet`.
+| Format | Prefix | Addresses |
+|---|---|---|
+| `SignatureFormat::Simple` | `smp` | Native segwit (P2WPKH, P2WSH, P2TR), no timelocks |
+| `SignatureFormat::Full(locks)` | `ful` | Any wallet address |
+| `SignatureFormat::ProofOfFunds { utxos, locks }` | `pof` | Any wallet address, plus wallet UTXOs to prove |
 
-### Common use cases
-- Proving ownership of Bitcoin addresses
-- Cryptographic proof of reserves or funds
-- User authentication in Bitcoin-based applications
-- Verifying control of addresses for support or dispute resolution
-- Hardware-wallet compatible message signing via PSBTs
-
-## Integration
-Designed to integrate with the [Bitcoin Dev Kit](https://bitcoindevkit.org/) ecosystem: 
-- **bdk‑wallet** — descriptor-based wallets, key management, and persistence.
-- **PSBT-based workflows** — compatible with hardware and air-gapped signers
-
-No private keys or WIFs are passed directly to this library.
-
-## Minimum Supported Rust Version (MSRV)
-This crate supports **Rust 1.85.0 or newer** across all feature combinations.
-
-## Supported Signature Formats
-
-- **Legacy**: Original P2PKH `signmessage`/`verifymessage` compatibility  
-- **Simple**: SegWit‑only witness stack format  
-- **Full**: Complete PSBT/transaction‑based format (any script, including Taproot)  
-- **FullProofOfFunds**: Extends Full format with additional UTXO inputs to prove fund ownership.
+Legacy (BIP-137) signing is left out: it has no PSBT, so it would need the raw
+private key. `verify_message` still verifies legacy signatures.
 
 ## Usage
-### Signing a Message
-```rs
-use bdk_wallet::{Wallet, KeychainKind};
-use bdk_message_signer::{MessageSigner, SignatureFormat};
 
-// `wallet` is already created and synced
-let address = wallet.peek_address(KeychainKind::External, 0).address;
+### Signing
 
-let proof = wallet.sign_message(
-    "Hello Bitcoin",
-    SignatureFormat::Simple,
-    &address,
-    None,
-)?;
+```rust,ignore
+use bdk_bip322::{MessageProof, MessageSigner, SignatureFormat};
+
+let address = wallet.reveal_next_address(KeychainKind::External).address;
+
+match wallet.sign_message(&address, "Hello Bitcoin", SignatureFormat::Simple, &[&signers])? {
+    MessageProof::Signature(signature) => println!("{signature}"),
+    // Not finalized, for example a multisig.
+    MessageProof::Psbt(psbt) => { /* pass to the other signers */ }
+}
 ```
-### Verifying a Signature
-```rs
-let result = wallet.verify_message(
-    &proof,
-    "Hello Bitcoin",
-    &address,
-)?;
 
-assert!(result.valid);
+Every signature is verified with `bip322` before it is returned.
+
+### Hardware signers and multisig
+
+When the PSBT cannot be finalized, `sign_message` returns it. Pass `&[]` as
+`signers` to get it unsigned. It carries the BIP-322 message field, so hardware
+signers can show it as a message.
+
+A cosigner's wallet signs it with `sign_message_psbt`. That refuses any PSBT
+that is not a BIP-322 signing request for one of its addresses, so it cannot be
+tricked into signing a transaction. Show the user the request first:
+
+```rust,ignore
+let request = bdk_message_signer::detect_bip322_psbt(&psbt).ok_or("not BIP-322")?;
+// Show request.message and the address of request.message_challenge, then:
+let signed = cosigner.sign_message_psbt(psbt, &format, &[&cosigner_signers])?;
 ```
+
+If the PSBT was finalized elsewhere, `bdk_message_signer::encode_signature(&psbt, &format)`
+encodes it.
+
+### Verifying
+
+Verification does not need a wallet. `verify_message` reads the format from
+the signature's prefix, so it handles every format:
+
+```rust,ignore
+let verification = bdk_message_signer::verify_message(&address, "Hello Bitcoin", &signature);
+assert!(verification.is_valid());
+```
+
+An unprefixed signature is read as legacy for a P2PKH address and as simple
+otherwise. `bip322` returns `Inconclusive` for scripts outside its templates,
+such as timelocked descriptors; see its README for which script types can
+return `Valid`. A proof of funds is checked offline only, so confirm its UTXOs
+exist and are unspent before trusting the amount it claims.
+
+## Examples
+
+| Example | Shows |
+|---|---|
+| `sign_and_verify` | Single-key signing and verification |
+| `proof_of_funds` | Proving control of wallet UTXOs |
+| `multisig` | A 2-of-2 where each cosigner signs with its own wallet |
+| `external_signer` | A watch-only wallet with a hardware or other external signer |
+
+Run one with `cargo run --example sign_and_verify`.
+
+## Minimum Supported Rust Version (MSRV)
+
+Rust 1.85.0 or newer.
 
 ## License
 

@@ -1,176 +1,91 @@
-//! A no_std Rust library implementing [BIP‑322: Generic Signed Message Format](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki).
+//! BIP-322 message signing for [`bdk_wallet`], built on the [`bip322`] crate.
 //!
-//! This crate provides:
-//! - Construction of virtual `to_spend` and `to_sign` transactions
-//! - Signing and verification for Simple, Full, and Full Proof-of-Funds BIP‑322 formats
-//! - Optional “proof of funds” support via additional UTXO inputs
-#![no_std]
+//! [`MessageSigner::sign_message`] builds the BIP-322 PSBT with
+//! [`bip322::create_bip322_psbt`], signs it with the signers you pass,
+//! finalizes it with the wallet, and encodes the result.
+//!
+//! Verification needs no wallet: use [`verify_message`], or the typed
+//! [`verify_simple`], [`verify_full`], [`verify_pof`] and [`verify_legacy`].
+//!
+//! [`finalize_bip322_psbt`] is bip322's own finalizer. It handles the standard
+//! script types and returns a `ful` or `pof` signature. For other descriptors,
+//! or for `smp`, finalize with [`MessageSigner::sign_message_psbt`] instead.
+//!
+//! The rest of [`bip322`] is re-exported as a module.
 
-#[macro_use]
-pub extern crate alloc;
+pub use bip322::{
+    self, Bip322Psbt, FULL_SIGNATURE_PREFIX, LockParams, POF_SIGNATURE_PREFIX,
+    SIMPLE_SIGNATURE_PREFIX, Verification, detect_bip322_psbt, finalize_bip322_psbt, verify_full,
+    verify_legacy, verify_pof, verify_simple,
+};
 
-#[cfg(feature = "std")]
-extern crate std;
-
-pub mod error;
-pub mod sign;
-pub mod utils;
-pub mod verify;
-
+mod error;
+mod sign;
+mod verify;
 pub use error::*;
-#[allow(unused_imports)]
 pub use sign::*;
-pub use utils::*;
 pub use verify::*;
 
-use crate::Error;
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
-use bitcoin::{
-    Address, Amount, OutPoint, Psbt,
-    base64::{Engine, engine::general_purpose},
+use bdk_wallet::{
+    bitcoin::{Address, OutPoint, Psbt},
+    signer::SignersContainer,
 };
 
-/// Represents the different formats supported by the message signing protocol.
-///
-/// BIP322 defines multiple formats for signatures to accommodate different use cases
-/// and maintain backward compatibility with legacy signing methods.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// BIP-322 signature format.
+#[derive(Debug, Clone)]
 pub enum SignatureFormat {
-    /// Legacy Bitcoin Core message signing format (P2PKH only).
-    Legacy,
-    /// A simplified version of the format that includes only the witness stack.
+    /// Witness only, prefixed `smp`. Native segwit addresses only, no timelocks.
     Simple,
-    /// Full format with complete transaction data.
-    Full,
-    /// The Full format with Proof-of-funds capabiility.
-    FullProofOfFunds,
+    /// The full `to_sign` transaction, prefixed `ful`.
+    Full(LockParams),
+    /// A finalized PSBT proving control of wallet UTXOs, prefixed `pof`.
+    ProofOfFunds {
+        /// Wallet UTXOs to prove. At least one.
+        utxos: Vec<OutPoint>,
+        /// Timelocks of `to_sign`.
+        locks: LockParams,
+    },
 }
 
-/// Main trait providing signing and verification functionality.
-///
-/// This trait is implemented for `bdk_wallet::Wallet` to provide seamless
-/// integration with BDK wallets.
-///
-/// # Examples
-///
-/// ```no_run
-/// use bdk_wallet::{Wallet, KeychainKind};
-/// use bdk_message_signer::{MessageSigner, SignatureFormat};
-///
-/// # fn main() -> Result<(), bdk_message_signer::error::Error> {
-/// # let mut wallet: Wallet = unimplemented!();
-/// let address = wallet.peek_address(KeychainKind::External, 0).address;
-///
-/// // Sign a message
-/// let proof = wallet.sign_message(
-///     "Hello Bitcoin",
-///     SignatureFormat::Simple,
-///     &address,
-///     None,
-/// )?;
-///
-/// // Verify the signature
-/// let result = wallet.verify_message(
-///     &proof,
-///     "Hello Bitcoin",
-///     &address,
-/// )?;
-///
-/// assert!(result.valid);
-/// # Ok(())
-/// # }
-/// ```
-pub trait MessageSigner {
-    /// Sign a message for a specific address.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message to sign (as UTF-8 text)
-    /// * `signature_type` - The signature format to use
-    /// * `address` - The address to sign with (must be owned by wallet)
-    /// * `utxos` - Optional list of specific UTXOs for proof-of-funds (only for `FullProofOfFunds`)
-    ///
-    /// # Returns
-    ///
-    /// Returns either a complete signature or a PSBT for external signing or [`Error`] when there's an error
-    fn sign_message(
-        &mut self,
-        message: &str,
-        signature_type: SignatureFormat,
-        address: &Address,
-        utxos: Option<Vec<OutPoint>>,
-    ) -> Result<MessageProof, Error>;
-
-    /// Verify message signature.
-    ///
-    /// # Arguments
-    ///
-    /// * `proof` - The signature proof to verify
-    /// * `message` - The original message that was signed
-    /// * `signature_type` - The signature format used
-    /// * `address` - The address that supposedly signed the message
-    ///
-    /// # Returns
-    ///
-    /// Returns verification result with validity and optional proven amount or [`Error`] when there's an error
-    fn verify_message(
-        &self,
-        proof: &MessageProof,
-        message: &str,
-        address: &Address,
-    ) -> Result<MessageVerificationResult, Error>;
-}
-
-/// Result of signature verification.
-pub struct MessageVerificationResult {
-    /// Whether the signature is valid for the given message and address
-    pub valid: bool,
-    /// The total amount proven for FullProofOfFunds signatures.
-    ///
-    /// This is `Some` only when using `FullProofOfFunds` format and
-    /// additional UTXOs were included. For other formats, always `None`.
-    pub proven_amount: Option<Amount>,
-}
-
-/// Result of signing operation.
-///
-/// Signing can result in either a complete signature (when the wallet has
-/// private keys) or a PSBT ready for external signing (e.g., hardware wallets).
-#[derive(Debug)]
+/// Result of [`MessageSigner::sign_message`].
+#[derive(Debug, Clone)]
 pub enum MessageProof {
-    /// Signature was created successfully.
+    /// The encoded signature.
+    Signature(String),
+    /// The PSBT could not be finalized, for example in a multisig or with no
+    /// signers.
     ///
-    /// Contains the base64-encoded signature string ready for sharing.
-    Signed(String),
-    /// PSBT ready for external signing.
+    /// Pass it to the other signers, for example with
+    /// [`MessageSigner::sign_message_psbt`].
     Psbt(Psbt),
 }
 
-impl MessageProof {
-    /// Converts the proof to a base64-encoded string.
-    pub fn to_base64(&self) -> String {
-        match self {
-            // Signed proofs are already in base64 format, just return the string
-            MessageProof::Signed(s) => s.clone(),
-            // For PSBT proofs, serialize and encode to base64
-            MessageProof::Psbt(psbt) => general_purpose::STANDARD.encode(psbt.serialize()),
-        }
-    }
+/// BIP-322 message signing for a [`Wallet`](bdk_wallet::Wallet).
+pub trait MessageSigner {
+    /// Signs `message` for `address`, which must belong to the wallet.
+    ///
+    /// Pass no `signers` to get the unsigned PSBT, for example for a hardware
+    /// signer. Returns [`MessageProof::Psbt`] if the PSBT could not be finalized.
+    fn sign_message(
+        &self,
+        address: &Address,
+        message: &str,
+        format: SignatureFormat,
+        signers: &[&SignersContainer],
+    ) -> Result<MessageProof, Error>;
 
-    /// Parses a base64-encoded string into a [`MessageProof`].
-    pub fn from_base64(s: &str) -> Result<Self, Error> {
-        // Try to decode as PSBT first - this handles the Full and FullProofOfFunds formats
-        if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
-            if let Ok(psbt) = Psbt::deserialize(&bytes) {
-                return Ok(MessageProof::Psbt(psbt));
-            }
-        }
-
-        // Otherwise, treat it as a signed proof (Legacy or Simple format)
-        // The string is already base64 encoded, so we store it as-is
-        Ok(MessageProof::Signed(s.to_string()))
-    }
+    /// Signs a BIP-322 PSBT from another party, for example a multisig cosigner,
+    /// or finalizes one a hardware signer has signed (pass no `signers`).
+    ///
+    /// Refuses any PSBT that is not a BIP-322 signing request for a wallet
+    /// address, so it cannot sign a transaction. Before calling it, show the
+    /// user the message and address from [`bip322::detect_bip322_psbt`]. For a
+    /// proof of funds, also show the UTXOs in inputs 1 and later: signing proves
+    /// the wallet controls them.
+    fn sign_message_psbt(
+        &self,
+        psbt: Psbt,
+        format: &SignatureFormat,
+        signers: &[&SignersContainer],
+    ) -> Result<MessageProof, Error>;
 }
