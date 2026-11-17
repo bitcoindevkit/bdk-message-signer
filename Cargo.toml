@@ -12,11 +12,13 @@ rust-version = "1.85.0"
 readme = "README.md"
 
 [dependencies]
-bitcoin = { version = "0.32.6", default-features = false }
-bdk_wallet = { version = "3.1.0", features = ["std"], default-features = false }
+bdk_wallet = { version = "3.2.0", features = ["std"], default-features = false }
+# NOTE: Uses bip322's unreleased API. Switch to the crates.io version once it is published.
+bip322 = { git = "https://github.com/rust-bitcoin/bip322", rev = "fa3dd7a0dea6b153ef7bc08dd2ca9b5562de6a00" }
+base64 = "0.23.1"
 
 [dev-dependencies]
-bdk_wallet = { version = "3.1.0", features = ["test-utils"] }
+bdk_wallet = { version = "3.2.0", features = ["test-utils"] }
 
 [features]
 default = ["std"]
